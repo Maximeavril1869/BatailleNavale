@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#071a28">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bataille navale">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<title>Bataille navale</title>
+<style>
+:root{
+  --abyss:#071a28; --abyss2:#0b2a3d; --sea:#0f4a63; --sea2:#1b6784; --foam:#dcf0f3; --muted:#8fb3bf;
+  --brass:#e0b765; --brass2:#b58a3a; --flare:#ff7b3d; --hit:#ef4b3f; --ok:#5fd6a2; --hull:#22333d;
+  --gs:min(92vw,360px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html,body{margin:0;height:100%;background:var(--abyss);color:var(--foam);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;overscroll-behavior:none}
+body{background:radial-gradient(130% 70% at 50% 0%,var(--abyss2),var(--abyss) 72%) fixed}
+button{font:inherit;color:inherit}
+.cond{font-family:"Avenir Next Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif;font-weight:700;letter-spacing:.01em}
+#app{height:100dvh;display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+[hidden]{display:none!important}
+section{flex:1;min-height:0;display:flex;flex-direction:column}
+
+/* ---------- Boutons et panneaux ---------- */
+.btn{border:0;border-radius:14px;padding:15px 22px;font-weight:700;font-size:17px;width:100%;max-width:340px}
+.btn.gold{background:linear-gradient(180deg,#efcf8c,var(--brass2));color:#2b1f00;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.btn.ghost{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.2)}
+.btn.fire{background:linear-gradient(180deg,#ff9a63,#d9501f);color:#2a0d00;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.4}
+.linkbtn{background:none;border:0;color:var(--muted);text-decoration:underline;font-size:15px;padding:6px}
+.iconbtn{width:38px;height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);font-size:18px;flex:none}
+.panel{background:rgba(0,0,0,.24);border:1px solid rgba(224,183,101,.25);border-radius:16px;padding:14px 16px;width:100%;max-width:360px}
+.panel h3{margin:0 0 10px;font-size:14px;font-weight:600;color:var(--muted)}
+.seg{display:flex;gap:8px}
+.seg button{flex:1;padding:11px 0;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:transparent;font-weight:600}
+.seg button.on{background:var(--brass);color:#2b1f00;border-color:var(--brass)}
+.modes{display:flex;flex-direction:column;gap:8px}
+.modes button{text-align:left;padding:11px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:transparent;line-height:1.3}
+.modes button small{display:block;color:var(--muted);font-size:12.5px;margin-top:1px}
+.modes button.on{background:rgba(224,183,101,.16);border-color:var(--brass)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.switch{width:50px;height:30px;border-radius:15px;background:rgba(255,255,255,.2);border:0;position:relative;flex:none}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.18s}
+.switch.on{background:var(--brass)}
+.switch.on::after{left:23px}
+input.txt{width:100%;padding:11px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.25);color:var(--foam);font:inherit;font-size:16px}
+
+/* ---------- Accueil ---------- */
+#home{align-items:center;justify-content:flex-start;padding:22px 20px 28px;gap:16px;text-align:center;overflow-y:auto}
+#home h1{margin:4px 0 0;font-size:42px;line-height:1.05}
+#home p.sub{margin:0;color:var(--muted);max-width:32ch;line-height:1.4}
+.hero{width:132px;height:132px;flex:none}
+
+/* ---------- Barres ---------- */
+.topbar{display:flex;align-items:center;gap:8px;padding:8px 12px;flex:none}
+.topbar .round{flex:1;line-height:1.15}
+.topbar .round b{font-size:18px}
+.topbar .round small{display:block;color:var(--muted);font-size:12.5px}
+.msg{min-height:40px;padding:2px 16px;text-align:center;font-size:14.5px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.msg small{color:var(--muted);font-size:12.5px}
+.msg.alert{color:var(--brass);font-weight:700}
+.actions{padding:6px 14px 12px;display:flex;gap:8px;justify-content:center;flex:none}
+.actions .btn{max-width:none}
+
+/* ---------- Grille ---------- */
+.gridwrap{display:flex;flex-direction:column;align-items:center;gap:5px}
+.gcap{font-size:13px;color:var(--muted);display:flex;justify-content:space-between;width:var(--gs)}
+.gcap b{color:var(--foam)}
+.grid{display:grid;grid-template-columns:.62fr repeat(10,1fr);grid-template-rows:.62fr repeat(10,1fr);width:var(--gs);height:var(--gs);
+  background:var(--sea);border:2px solid #2c7d9b;border-radius:10px;overflow:hidden;user-select:none;-webkit-user-select:none}
+.grid i.lb{display:flex;align-items:center;justify-content:center;font-style:normal;font-size:calc(var(--gs)/32);color:var(--muted);background:rgba(0,0,0,.28)}
+.grid b.c{position:relative;display:block;border:.5px solid rgba(160,215,230,.22);background:linear-gradient(160deg,#12546f,#0e4560)}
+.grid.armed{box-shadow:0 0 0 3px rgba(255,123,61,.55),0 0 22px rgba(255,123,61,.25);border-color:var(--flare)}
+.grid.armed b.c.free{cursor:crosshair}
+.grid b.c.hull{background:linear-gradient(160deg,#5a6f7a,#3b4d57);border-color:rgba(0,0,0,.35)}
+.grid b.c.miss::after{content:"";position:absolute;left:50%;top:50%;width:34%;height:34%;margin:-17% 0 0 -17%;border-radius:50%;border:2px solid #e8f7fa;opacity:.9}
+.grid b.c.hit::after{content:"";position:absolute;left:50%;top:50%;width:52%;height:52%;margin:-26% 0 0 -26%;border-radius:50%;
+  background:radial-gradient(circle at 40% 35%,#ffd2a1,var(--flare) 45%,var(--hit));box-shadow:0 0 8px 2px rgba(255,123,61,.7)}
+.grid b.c.sk{background:linear-gradient(160deg,#2a3a44,#161f26);border-color:rgba(239,75,63,.55)}
+.grid b.c.last{outline:2.5px solid #fff;outline-offset:-2.5px;z-index:2}
+.grid b.c.tgt{outline:2.5px dashed var(--flare);outline-offset:-2.5px;z-index:2;background:rgba(255,123,61,.3)}
+.grid b.c.tgt::before{content:"";position:absolute;left:50%;top:15%;width:2px;height:70%;background:var(--flare);margin-left:-1px}
+.grid b.c.tgt::after{content:"";position:absolute;top:50%;left:15%;height:2px;width:70%;background:var(--flare);margin-top:-1px}
+.grid b.c.pok{background:rgba(95,214,162,.45)}
+.grid b.c.pbad{background:rgba(239,75,63,.45)}
+
+/* ---------- Flotte (pastilles) ---------- */
+.fleetrow{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:4px 12px;flex:none}
+.shipchip{display:flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);font-size:12.5px;white-space:nowrap}
+.shipchip .pips{display:flex;gap:2px}
+.shipchip .pips i{width:7px;height:10px;border-radius:2px;background:#8aa3ad}
+.shipchip.sel{border-color:var(--brass);background:rgba(224,183,101,.18)}
+.shipchip.done{opacity:.55}
+.shipchip.done .pips i{background:var(--ok)}
+.shipchip.gone{opacity:.6;text-decoration:line-through}
+.shipchip.gone .pips i{background:var(--hit)}
+.fleetrow.small .shipchip{font-size:11px;padding:3px 7px}
+.plbtns{display:flex;gap:8px;padding:6px 14px;justify-content:center;flex:none}
+.plbtns .btn{max-width:none;padding:11px 8px;font-size:15px;flex:1}
+
+/* ---------- Placement ---------- */
+#place{align-items:stretch}
+#place .gridwrap{--gs:min(92vw,calc(100dvh - 360px),560px);padding-top:4px}
+#place.rot{transform:rotate(180deg)}
+
+/* ---------- Bataille : un joueur (ordinateur et passe-passe) ---------- */
+#battle .boards{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;
+  --gs:min(90vw,calc((100dvh - 330px)/2),520px)}
+@media (min-width:900px) and (min-aspect-ratio:13/10){
+  #battle .boards{flex-direction:row;justify-content:center;align-items:flex-start;gap:3vw;padding-top:8px;--gs:min(44vw,calc(100dvh - 250px))}
+}
+
+/* ---------- Face à face (iPad à plat) ---------- */
+#duo{display:grid;grid-template-rows:1fr auto 1fr;min-height:0}
+#duo .seat{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;gap:6px;padding:6px 12px;margin:4px;
+  border:2px solid transparent;border-radius:18px;transition:border-color .2s;--gs:min(92vw,calc(50dvh - 150px),520px)}
+#duo .seat.turn{border-color:rgba(224,183,101,.55);background:rgba(224,183,101,.05)}
+#duo .seat.top{transform:rotate(180deg)}
+.seathead{display:flex;align-items:baseline;gap:10px;width:var(--gs);justify-content:space-between}
+.seathead b{font-size:19px}.seathead span{color:var(--muted);font-size:13px}
+.seatfoot{display:flex;align-items:center;gap:10px;width:var(--gs)}
+.seatfoot .msg{flex:1;min-height:0;padding:0;font-size:13.5px;text-align:left;align-items:flex-start;line-height:1.3}
+.seatfoot .msg small{font-size:12px}
+.seatfoot .btn.fire{flex:0 0 38%;max-width:none;padding:12px 8px;font-size:16px}
+.midstrip{display:flex;align-items:center;justify-content:center;padding:2px 0}
+@media (min-aspect-ratio:13/10){
+  #duo .seat{display:grid;grid-template-columns:auto minmax(0,340px);grid-template-areas:"grid head" "grid foot";
+    align-content:center;justify-content:center;column-gap:26px;row-gap:10px;--gs:min(46vw,calc(50dvh - 56px))}
+  #duo .seathead{grid-area:head;width:auto;flex-direction:column;align-items:flex-start;gap:2px;align-self:end}
+  #duo .seathead b{font-size:24px}
+  #duo .gridwrap{grid-area:grid}
+  #duo .seatfoot{grid-area:foot;width:auto;flex-direction:column;align-items:stretch;align-self:start}
+  #duo .seatfoot .msg{font-size:15px}
+  #duo .seatfoot .btn.fire{flex:none;padding:14px 12px;font-size:18px}
+}
+
+/* ---------- Voile « passe l'appareil » ---------- */
+#veil{position:fixed;inset:0;z-index:50;background:radial-gradient(130% 70% at 50% 0%,var(--abyss2),var(--abyss) 72%);display:flex;align-items:center;justify-content:center;padding:24px}
+#veil.rot{transform:rotate(180deg)}
+.veilbox{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;max-width:340px;width:100%}
+.veilbox h2{margin:0;font-size:30px}.veilbox p{margin:0;line-height:1.4;color:var(--muted)}
+
+/* ---------- Modales ---------- */
+dialog{border:0;border-radius:20px;padding:0;background:#0d3247;color:var(--foam);width:min(92vw,420px);max-height:86dvh;box-shadow:0 20px 60px #000a}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.dlg{padding:18px;display:flex;flex-direction:column;gap:12px;max-height:86dvh;overflow-y:auto}
+.dlg h2{margin:0;font-size:24px}
+.dlg h4{margin:6px 0 2px;color:var(--brass);font-size:14px}
+.dlg p,.dlg li{margin:0;line-height:1.45;font-size:14.5px;color:#dbe9ee}
+.dlg ul{margin:4px 0;padding-left:20px;display:flex;flex-direction:column;gap:5px}
+
+/* ---------- Mode téléphone ---------- */
+#telhost,#phone{align-items:center;padding:18px;gap:14px;text-align:center;overflow-y:auto}
+#qr{background:#fff;border-radius:14px;padding:10px;width:min(78vw,300px);line-height:0}
+#qr svg{width:100%;height:auto}
+.slotrow{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.22);width:100%;text-align:left}
+.slotrow .dot{width:12px;height:12px;border-radius:50%;background:#55707b;flex:none}
+.slotrow.on .dot{background:var(--ok)}
+.slotrow .st{margin-left:auto;color:var(--muted);font-size:13px}
+.slotrow.on .st{color:var(--ok)}
+#phone .boards{--gs:min(92vw,calc(100dvh - 300px),520px)}
+.log{width:100%;max-width:360px;color:var(--muted);font-size:13px;line-height:1.5;min-height:56px}
+.hint{color:var(--muted);font-size:13px;max-width:34ch;line-height:1.4;margin:0}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== Accueil ===== -->
+  <section id="home">
+    <svg class="hero" viewBox="0 0 120 120" aria-hidden="true">
+      <rect x="6" y="6" width="108" height="108" rx="10" fill="#0f4a63" stroke="#2c7d9b" stroke-width="3"/>
+      <g stroke="rgba(160,215,230,.28)" stroke-width="1">
+        <path d="M24 6V114M42 6V114M60 6V114M78 6V114M96 6V114M6 24H114M6 42H114M6 60H114M6 78H114M6 96H114"/>
+      </g>
+      <rect x="24" y="60" width="54" height="18" fill="#5a6f7a" stroke="#22333d"/>
+      <circle cx="33" cy="69" r="6" fill="#ff7b3d"/><circle cx="51" cy="69" r="6" fill="#ef4b3f"/>
+      <circle cx="87" cy="33" r="5" fill="none" stroke="#e8f7fa" stroke-width="2"/>
+      <circle cx="42" cy="96" r="5" fill="none" stroke="#e8f7fa" stroke-width="2"/>
+      <circle cx="96" cy="87" r="5" fill="none" stroke="#e8f7fa" stroke-width="2"/>
+    </svg>
+    <h1 class="cond">Bataille navale</h1>
+    <p class="sub">Grille de 10 × 10, cinq navires. Le premier qui coule toute la flotte adverse gagne.</p>
+    <div class="panel">
+      <h3>Mode de jeu</h3>
+      <div class="modes" id="segMode">
+        <button data-m="solo" class="on"><b>Contre l'ordinateur</b><small>Trois niveaux de difficulté</small></button>
+        <button data-m="passe"><b>À deux, on se passe l'appareil</b><small>Un écran masque la flotte entre les tours</small></button>
+        <button data-m="duo"><b>À deux, face à face</b><small>iPad posé à plat, une grille devant chacun</small></button>
+        <button data-m="tel"><b>À deux, flottes sur téléphone</b><small>L'iPad est le plateau, chaque téléphone garde sa flotte secrète</small></button>
+      </div>
+    </div>
+    <div class="panel" id="optLevel">
+      <h3>Niveau de l'ordinateur</h3>
+      <div class="seg" id="segLevel"><button data-l="1">Débutant</button><button data-l="2" class="on">Normal</button><button data-l="3">Fort</button></div>
+    </div>
+    <div class="panel" id="optNames" hidden>
+      <h3>Joueurs</h3>
+      <input class="txt" id="n1" maxlength="14" autocomplete="off" aria-label="Nom du joueur 1">
+      <input class="txt" id="n2" maxlength="14" autocomplete="off" aria-label="Nom du joueur 2" style="margin-top:8px">
+    </div>
+    <div class="panel">
+      <div class="row">
+        <div style="text-align:left"><b>Le joueur qui touche rejoue</b><div style="color:var(--muted);font-size:12.5px;margin-top:2px">Variante : sans elle, on alterne à chaque tir</div></div>
+        <button class="switch" id="swRejoue" aria-label="Rejouer si touché"></button>
+      </div>
+    </div>
+    <button class="btn gold" id="btnNew">Nouvelle partie</button>
+    <button class="btn ghost" id="btnResume" hidden>Reprendre la partie</button>
+    <button class="linkbtn" id="btnRules">Règles du jeu</button>
+  </section>
+
+  <!-- ===== Placement de la flotte ===== -->
+  <section id="place" hidden>
+    <div class="topbar">
+      <div class="round"><b class="cond" id="plTitle"></b><small id="plSub"></small></div>
+      <button class="iconbtn" id="btnMenuPl" aria-label="Menu">⋯</button>
+    </div>
+    <div class="gridwrap" id="plGrid"></div>
+    <div class="fleetrow" id="plFleet"></div>
+    <div class="msg" id="plMsg"></div>
+    <div class="plbtns">
+      <button class="btn ghost" id="plRot">↻ Pivoter</button>
+      <button class="btn ghost" id="plRand">Au hasard</button>
+      <button class="btn ghost" id="plClear">Effacer</button>
+    </div>
+    <div class="actions"><button class="btn gold" id="plOk" disabled>Valider la flotte</button></div>
+  </section>
+
+  <!-- ===== Bataille : un joueur devant l'appareil ===== -->
+  <section id="battle" hidden>
+    <div class="topbar">
+      <div class="round"><b class="cond" id="bTitle"></b><small id="bSub"></small></div>
+      <button class="iconbtn" id="btnMenuB" aria-label="Menu">⋯</button>
+    </div>
+    <div class="boards">
+      <div class="gridwrap"><div class="gcap" id="bCap1"></div><div id="bTarget"></div><div class="fleetrow small" id="bFleet"></div></div>
+      <div class="gridwrap"><div class="gcap" id="bCap2"></div><div id="bOwn"></div></div>
+    </div>
+    <div class="msg" id="bMsg"></div>
+    <div class="actions"><button class="btn fire" id="bAction" disabled>…</button></div>
+  </section>
+
+  <!-- ===== Face à face (iPad à plat) et plateau du mode téléphone ===== -->
+  <section id="duo" hidden>
+    <div class="seat top" id="seat1">
+      <div class="seathead"><b class="cond"></b><span></span></div>
+      <div class="gridwrap"></div>
+      <div class="seatfoot"><div class="msg"></div><button class="btn fire" disabled>Feu !</button></div>
+    </div>
+    <div class="midstrip"><button class="iconbtn" id="btnMenuD" aria-label="Menu">⋯</button></div>
+    <div class="seat bottom" id="seat0">
+      <div class="seathead"><b class="cond"></b><span></span></div>
+      <div class="gridwrap"></div>
+      <div class="seatfoot"><div class="msg"></div><button class="btn fire" disabled>Feu !</button></div>
+    </div>
+  </section>
+
+  <!-- ===== Mode téléphone : attente des deux téléphones sur l'iPad ===== -->
+  <section id="telhost" hidden>
+    <div class="topbar" style="width:100%">
+      <div class="round" style="text-align:left"><b class="cond">Connecte les téléphones</b><small id="thSub"></small></div>
+      <button class="iconbtn" id="btnMenuT" aria-label="Menu">⋯</button>
+    </div>
+    <p class="hint">Chaque joueur scanne ce code avec l'appareil photo de son téléphone, puis place sa flotte sur le téléphone.</p>
+    <div id="qr"></div>
+    <div class="slotrow" id="slot0"><span class="dot"></span><b></b><span class="st">En attente</span></div>
+    <div class="slotrow" id="slot1"><span class="dot"></span><b></b><span class="st">En attente</span></div>
+    <p class="hint" id="thMsg"></p>
+  </section>
+
+  <!-- ===== Mode téléphone : écran du téléphone ===== -->
+  <section id="phone" hidden>
+    <div class="topbar" style="width:100%">
+      <div class="round" style="text-align:left"><b class="cond" id="phTitle">Bataille navale</b><small id="phSub"></small></div>
+      <button class="iconbtn" id="btnMenuP" aria-label="Menu">⋯</button>
+    </div>
+    <div id="phJoin" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:12px">
+      <div class="panel"><h3>Ton nom</h3><input class="txt" id="phName" maxlength="14" autocomplete="off" aria-label="Ton nom"></div>
+      <button class="btn gold" id="phGo">Rejoindre la partie</button>
+    </div>
+    <div id="phStatus" class="msg" style="width:100%"></div>
+    <div class="boards" id="phBoards" hidden>
+      <div class="gridwrap"><div class="gcap" id="phCap"></div><div id="phGrid"></div></div>
+    </div>
+    <div class="fleetrow small" id="phFleet" hidden></div>
+    <div class="log" id="phLog"></div>
+  </section>
+</div>
+
+<div id="veil" hidden>
+  <div class="veilbox">
+    <h2 class="cond" id="veilTitle"></h2>
+    <p id="veilText"></p>
+    <button class="btn gold" id="btnVeil"></button>
+  </div>
+</div>
+
+<!-- ===== Modales ===== -->
+<dialog id="dlgRules"><div class="dlg">
+  <h2 class="cond">Règles</h2>
+  <h4>But</h4><p>Couler tous les navires de l'adversaire avant qu'il coule les tiens.</p>
+  <h4>La flotte</h4>
+  <ul><li>Une grille de 10 × 10 par joueur (colonnes A à J, lignes 1 à 10).</li>
+  <li>Cinq navires : porte-avions (5 cases), croiseur (4), contre-torpilleur (3), sous-marin (3), torpilleur (2).</li>
+  <li>Chaque navire est posé à l'horizontale ou à la verticale, sans chevaucher un autre. Ils peuvent se toucher.</li></ul>
+  <h4>Un tour</h4>
+  <p>Tu choisis une case de la grille adverse, puis tu tires. On annonce « à l'eau », « touché » ou « coulé ». Un navire est coulé quand toutes ses cases sont touchées ; son nom est alors révélé.</p>
+  <p>Par défaut, on alterne à chaque tir. Avec la variante « le joueur qui touche rejoue », tu continues tant que tu touches.</p>
+  <h4>Modes</h4>
+  <ul><li><b>Contre l'ordinateur</b> : débutant, normal ou fort.</li>
+  <li><b>On se passe l'appareil</b> : un écran cache la flotte entre les tours.</li>
+  <li><b>Face à face</b> : iPad à plat, une grille devant chacun. Chaque grille montre les tirs reçus par son propriétaire.</li>
+  <li><b>Flottes sur téléphone</b> : l'iPad sert de plateau, chaque téléphone garde sa flotte et la montre à son joueur seul.</li></ul>
+  <button class="btn gold" data-close>Compris</button>
+</div></dialog>
+
+<dialog id="dlgMenu"><div class="dlg">
+  <h2 class="cond">Menu</h2>
+  <button class="btn ghost" id="btnMenuRules" style="max-width:none">Règles</button>
+  <button class="btn ghost" id="btnQuit" style="max-width:none">Quitter vers l'accueil</button>
+  <button class="btn gold" data-close style="max-width:none">Retour à la partie</button>
+</div></dialog>
+
+<dialog id="dlgOver"><div class="dlg" id="overBody"></div></dialog>
+
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/peerjs.min.js"></script>
+<script src="engine.js"></script>
+<script src="net.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

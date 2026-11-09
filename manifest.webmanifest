@@ -1,0 +1,17 @@
+{
+  "name": "Bataille navale",
+  "short_name": "Bataille navale",
+  "description": "La bataille navale à deux, en local, sur iPad et téléphone",
+  "lang": "fr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#071a28",
+  "theme_color": "#071a28",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
