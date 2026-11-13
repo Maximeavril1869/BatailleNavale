@@ -110,7 +110,6 @@ input.txt{width:100%;padding:11px 12px;border-radius:12px;border:1px solid rgba(
 /* ---------- Placement ---------- */
 #place{align-items:stretch}
 #place .gridwrap{--gs:min(92vw,calc(100dvh - 360px),560px);padding-top:4px}
-#place.rot{transform:rotate(180deg)}
 
 /* ---------- Bataille : un joueur (ordinateur et passe-passe) ---------- */
 #battle .boards{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;
@@ -118,36 +117,6 @@ input.txt{width:100%;padding:11px 12px;border-radius:12px;border:1px solid rgba(
 @media (min-width:900px) and (min-aspect-ratio:13/10){
   #battle .boards{flex-direction:row;justify-content:center;align-items:flex-start;gap:3vw;padding-top:8px;--gs:min(44vw,calc(100dvh - 250px))}
 }
-
-/* ---------- Face à face (iPad à plat) ---------- */
-#duo{display:grid;grid-template-rows:1fr auto 1fr;min-height:0}
-#duo .seat{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;gap:6px;padding:6px 12px;margin:4px;
-  border:2px solid transparent;border-radius:18px;transition:border-color .2s;--gs:min(92vw,calc(50dvh - 150px),520px)}
-#duo .seat.turn{border-color:rgba(224,183,101,.55);background:rgba(224,183,101,.05)}
-#duo .seat.top{transform:rotate(180deg)}
-.seathead{display:flex;align-items:baseline;gap:10px;width:var(--gs);justify-content:space-between}
-.seathead b{font-size:19px}.seathead span{color:var(--muted);font-size:13px}
-.seatfoot{display:flex;align-items:center;gap:10px;width:var(--gs)}
-.seatfoot .msg{flex:1;min-height:0;padding:0;font-size:13.5px;text-align:left;align-items:flex-start;line-height:1.3}
-.seatfoot .msg small{font-size:12px}
-.seatfoot .btn.fire{flex:0 0 38%;max-width:none;padding:12px 8px;font-size:16px}
-.midstrip{display:flex;align-items:center;justify-content:center;padding:2px 0}
-@media (min-aspect-ratio:13/10){
-  #duo .seat{display:grid;grid-template-columns:auto minmax(0,340px);grid-template-areas:"grid head" "grid foot";
-    align-content:center;justify-content:center;column-gap:26px;row-gap:10px;--gs:min(46vw,calc(50dvh - 56px))}
-  #duo .seathead{grid-area:head;width:auto;flex-direction:column;align-items:flex-start;gap:2px;align-self:end}
-  #duo .seathead b{font-size:24px}
-  #duo .gridwrap{grid-area:grid}
-  #duo .seatfoot{grid-area:foot;width:auto;flex-direction:column;align-items:stretch;align-self:start}
-  #duo .seatfoot .msg{font-size:15px}
-  #duo .seatfoot .btn.fire{flex:none;padding:14px 12px;font-size:18px}
-}
-
-/* ---------- Voile « passe l'appareil » ---------- */
-#veil{position:fixed;inset:0;z-index:50;background:radial-gradient(130% 70% at 50% 0%,var(--abyss2),var(--abyss) 72%);display:flex;align-items:center;justify-content:center;padding:24px}
-#veil.rot{transform:rotate(180deg)}
-.veilbox{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;max-width:340px;width:100%}
-.veilbox h2{margin:0;font-size:30px}.veilbox p{margin:0;line-height:1.4;color:var(--muted)}
 
 /* ---------- Modales ---------- */
 dialog{border:0;border-radius:20px;padding:0;background:#0d3247;color:var(--foam);width:min(92vw,420px);max-height:86dvh;box-shadow:0 20px 60px #000a}
@@ -158,18 +127,33 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .dlg p,.dlg li{margin:0;line-height:1.45;font-size:14.5px;color:#dbe9ee}
 .dlg ul{margin:4px 0;padding-left:20px;display:flex;flex-direction:column;gap:5px}
 
-/* ---------- Mode téléphone ---------- */
-#telhost,#phone{align-items:center;padding:18px;gap:14px;text-align:center;overflow-y:auto}
-#qr{background:#fff;border-radius:14px;padding:10px;width:min(78vw,300px);line-height:0}
-#qr svg{width:100%;height:auto}
-.slotrow{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.22);width:100%;text-align:left}
-.slotrow .dot{width:12px;height:12px;border-radius:50%;background:#55707b;flex:none}
-.slotrow.on .dot{background:var(--ok)}
-.slotrow .st{margin-left:auto;color:var(--muted);font-size:13px}
-.slotrow.on .st{color:var(--ok)}
-#phone .boards{--gs:min(92vw,calc(100dvh - 300px),520px)}
-.log{width:100%;max-width:360px;color:var(--muted);font-size:13px;line-height:1.5;min-height:56px}
+/* ---------- En ligne ---------- */
 .hint{color:var(--muted);font-size:13px;max-width:34ch;line-height:1.4;margin:0}
+.overlay{position:fixed;inset:0;z-index:50;background:radial-gradient(130% 70% at 50% 0%,var(--abyss2),var(--abyss) 72%);display:flex;align-items:center;justify-content:center;padding:24px}
+.waitbox{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;max-width:340px;width:100%}
+.waitbox h2{margin:0;font-size:30px}.waitbox p{margin:0;line-height:1.4;color:var(--muted)}
+.waitbox .waitdots{color:var(--brass);font-weight:700}
+#offbar{position:fixed;left:0;right:0;bottom:env(safe-area-inset-bottom);z-index:60;height:26px;line-height:25px;padding:0 10px;text-align:center;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;background:#fef3c7;color:#92400e;border-top:1px solid #fcd34d}
+.olwho{margin:0 0 12px;font-size:14px;color:var(--muted)}.olwho b{color:var(--foam)}
+.olrow{display:flex;gap:8px}.olrow input{text-transform:uppercase;letter-spacing:.2em;text-align:center}.olrow .btn{width:auto;padding:11px 16px;font-size:16px}
+.olerr{margin:10px 0 0;color:#ff9b8a;font-size:14px;line-height:1.35}
+.olitem{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid rgba(255,255,255,.1);text-align:left;font-size:14px}
+.olitem .t{flex:1;min-width:0}.olitem .t b{letter-spacing:.15em}.olitem .t small{display:block;color:var(--muted)}
+.olitem button{padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.22);background:transparent;color:inherit;font-size:14px}
+.ver{margin:0;color:var(--muted);font-size:12px;opacity:.7}
+#fleetwait{align-items:center;justify-content:center;padding:24px;gap:12px;text-align:center}
+
+/* ---------- Plateau (affichage commun, personne ne joue dessus) ---------- */
+#plateau{align-items:center;overflow-y:auto}
+#plateau .topbar{width:100%}
+#plateau .boards{display:flex;flex-direction:column;align-items:center;gap:14px;--gs:min(90vw,calc((100dvh - 260px)/2),520px);padding:4px 0}
+@media (min-width:900px) and (min-aspect-ratio:13/10){
+  #plateau .boards{flex-direction:row;align-items:flex-start;justify-content:center;gap:4vw;--gs:min(44vw,calc(100dvh - 240px))}
+}
+#plateau .gridwrap.aimed .grid{border-color:var(--flare);box-shadow:0 0 0 3px rgba(255,123,61,.55),0 0 22px rgba(255,123,61,.25)}
+#plateau .gridwrap.aimed .gcap b{color:var(--brass)}
+#plateau .msg{font-size:17px;min-height:56px}
+@media (min-width:900px){#plateau .msg{font-size:22px}#plateau .gcap{font-size:16px}}
 </style>
 </head>
 <body>
@@ -193,10 +177,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     <div class="panel">
       <h3>Mode de jeu</h3>
       <div class="modes" id="segMode">
-        <button data-m="solo" class="on"><b>Contre l'ordinateur</b><small>Trois niveaux de difficulté</small></button>
-        <button data-m="passe"><b>À deux, on se passe l'appareil</b><small>Un écran masque la flotte entre les tours</small></button>
-        <button data-m="duo"><b>À deux, face à face</b><small>iPad posé à plat, une grille devant chacun</small></button>
-        <button data-m="tel"><b>À deux, flottes sur téléphone</b><small>L'iPad est le plateau, chaque téléphone garde sa flotte secrète</small></button>
+        <button data-m="solo" class="on"><b>Contre l'ordinateur</b><small>Trois niveaux de difficulté, hors ligne</small></button>
+        <button data-m="online"><b>En ligne</b><small>À deux, chacun sur son appareil. Un iPad peut servir de plateau commun.</small></button>
       </div>
     </div>
     <div class="panel" id="optLevel">
@@ -204,9 +186,25 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       <div class="seg" id="segLevel"><button data-l="1">Débutant</button><button data-l="2" class="on">Normal</button><button data-l="3">Fort</button></div>
     </div>
     <div class="panel" id="optNames" hidden>
-      <h3>Joueurs</h3>
-      <input class="txt" id="n1" maxlength="14" autocomplete="off" aria-label="Nom du joueur 1">
-      <input class="txt" id="n2" maxlength="14" autocomplete="off" aria-label="Nom du joueur 2" style="margin-top:8px">
+      <h3>Ton prénom</h3>
+      <input class="txt" id="n1" maxlength="14" autocomplete="off" aria-label="Ton prénom">
+    </div>
+    <div class="panel" id="onlinePanel" hidden>
+      <h3>Compte pour jouer en ligne</h3>
+      <div id="olLogin">
+        <input class="txt" id="olEmail" type="email" autocomplete="username" autocapitalize="none" placeholder="E-mail du compte" aria-label="E-mail du compte">
+        <input class="txt" id="olPwd" type="password" autocomplete="current-password" placeholder="Mot de passe" aria-label="Mot de passe" style="margin-top:8px">
+        <button class="btn gold" id="btnOlLogin" style="margin-top:10px;max-width:none">Se connecter</button>
+      </div>
+      <div id="olIn" hidden>
+        <p class="olwho">Connecté : <b id="olWho"></b> <button class="linkbtn" id="btnOlLogout">Se déconnecter</button></p>
+        <h3>Rejoindre une partie</h3>
+        <div class="olrow"><input class="txt" id="olCode" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="Code" aria-label="Code de la partie"><button class="btn ghost" id="btnOlJoin">Rejoindre</button></div>
+        <button class="linkbtn" id="btnOlPlateau">Ouvrir comme plateau (affichage seul, sans jouer)</button>
+        <h3 style="margin-top:14px">Parties en cours</h3>
+        <div id="olList"></div>
+      </div>
+      <p class="olerr" id="olErr" role="alert" hidden></p>
     </div>
     <div class="panel">
       <div class="row">
@@ -217,6 +215,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     <button class="btn gold" id="btnNew">Nouvelle partie</button>
     <button class="btn ghost" id="btnResume" hidden>Reprendre la partie</button>
     <button class="linkbtn" id="btnRules">Règles du jeu</button>
+    <p class="ver" id="ver"></p>
   </section>
 
   <!-- ===== Placement de la flotte ===== -->
@@ -250,60 +249,38 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     <div class="actions"><button class="btn fire" id="bAction" disabled>…</button></div>
   </section>
 
-  <!-- ===== Face à face (iPad à plat) et plateau du mode téléphone ===== -->
-  <section id="duo" hidden>
-    <div class="seat top" id="seat1">
-      <div class="seathead"><b class="cond"></b><span></span></div>
-      <div class="gridwrap"></div>
-      <div class="seatfoot"><div class="msg"></div><button class="btn fire" disabled>Feu !</button></div>
-    </div>
-    <div class="midstrip"><button class="iconbtn" id="btnMenuD" aria-label="Menu">⋯</button></div>
-    <div class="seat bottom" id="seat0">
-      <div class="seathead"><b class="cond"></b><span></span></div>
-      <div class="gridwrap"></div>
-      <div class="seatfoot"><div class="msg"></div><button class="btn fire" disabled>Feu !</button></div>
-    </div>
+  <!-- ===== En ligne : flotte prête, on attend l'autre joueur ===== -->
+  <section id="fleetwait" hidden>
+    <h2 class="cond" style="margin:0;font-size:28px">Flotte prête</h2>
+    <p class="hint" id="fwText">En attente de la flotte de l'autre joueur…</p>
+    <button class="btn ghost" id="btnFwHome" style="max-width:340px">Revenir à l'accueil (la partie reste ouverte)</button>
   </section>
 
-  <!-- ===== Mode téléphone : attente des deux téléphones sur l'iPad ===== -->
-  <section id="telhost" hidden>
-    <div class="topbar" style="width:100%">
-      <div class="round" style="text-align:left"><b class="cond">Connecte les téléphones</b><small id="thSub"></small></div>
-      <button class="iconbtn" id="btnMenuT" aria-label="Menu">⋯</button>
+  <!-- ===== Plateau : affichage commun, personne ne joue dessus ===== -->
+  <section id="plateau" hidden>
+    <div class="topbar">
+      <div class="round"><b class="cond" id="pTitle"></b><small id="pSub"></small></div>
+      <button class="iconbtn" id="btnPlQuit" aria-label="Quitter le plateau">✕</button>
     </div>
-    <p class="hint">Chaque joueur scanne ce code avec l'appareil photo de son téléphone, puis place sa flotte sur le téléphone.</p>
-    <div id="qr"></div>
-    <div class="slotrow" id="slot0"><span class="dot"></span><b></b><span class="st">En attente</span></div>
-    <div class="slotrow" id="slot1"><span class="dot"></span><b></b><span class="st">En attente</span></div>
-    <p class="hint" id="thMsg"></p>
-  </section>
-
-  <!-- ===== Mode téléphone : écran du téléphone ===== -->
-  <section id="phone" hidden>
-    <div class="topbar" style="width:100%">
-      <div class="round" style="text-align:left"><b class="cond" id="phTitle">Bataille navale</b><small id="phSub"></small></div>
-      <button class="iconbtn" id="btnMenuP" aria-label="Menu">⋯</button>
+    <div class="boards">
+      <div class="gridwrap" id="pw0"><div class="gcap" id="pCap0"></div><div id="pG0"></div></div>
+      <div class="gridwrap" id="pw1"><div class="gcap" id="pCap1"></div><div id="pG1"></div></div>
     </div>
-    <div id="phJoin" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:12px">
-      <div class="panel"><h3>Ton nom</h3><input class="txt" id="phName" maxlength="14" autocomplete="off" aria-label="Ton nom"></div>
-      <button class="btn gold" id="phGo">Rejoindre la partie</button>
-    </div>
-    <div id="phStatus" class="msg" style="width:100%"></div>
-    <div class="boards" id="phBoards" hidden>
-      <div class="gridwrap"><div class="gcap" id="phCap"></div><div id="phGrid"></div></div>
-    </div>
-    <div class="fleetrow small" id="phFleet" hidden></div>
-    <div class="log" id="phLog"></div>
+    <div class="msg" id="pMsg"></div>
   </section>
 </div>
 
-<div id="veil" hidden>
-  <div class="veilbox">
-    <h2 class="cond" id="veilTitle"></h2>
-    <p id="veilText"></p>
-    <button class="btn gold" id="btnVeil"></button>
+<div id="wait" class="overlay" hidden>
+  <div class="waitbox">
+    <h2 class="cond">Partie <span id="waitCode"></span></h2>
+    <p>Demande à l'autre joueur d'ouvrir Bataille navale, de choisir « En ligne », puis « Rejoindre » et de taper ce code.</p>
+    <p class="waitdots">En attente de l'autre joueur…</p>
+    <button class="btn ghost" id="btnWaitCancel">Annuler la partie</button>
+    <button class="linkbtn" id="btnWaitHome">Revenir à l'accueil (la partie reste ouverte)</button>
   </div>
 </div>
+
+<div id="offbar" role="status" aria-live="polite" hidden>Hors ligne : ton tir partira dès le retour du réseau</div>
 
 <!-- ===== Modales ===== -->
 <dialog id="dlgRules"><div class="dlg">
@@ -317,10 +294,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   <p>Tu choisis une case de la grille adverse, puis tu tires. On annonce « à l'eau », « touché » ou « coulé ». Un navire est coulé quand toutes ses cases sont touchées ; son nom est alors révélé.</p>
   <p>Par défaut, on alterne à chaque tir. Avec la variante « le joueur qui touche rejoue », tu continues tant que tu touches.</p>
   <h4>Modes</h4>
-  <ul><li><b>Contre l'ordinateur</b> : débutant, normal ou fort.</li>
-  <li><b>On se passe l'appareil</b> : un écran cache la flotte entre les tours.</li>
-  <li><b>Face à face</b> : iPad à plat, une grille devant chacun. Chaque grille montre les tirs reçus par son propriétaire.</li>
-  <li><b>Flottes sur téléphone</b> : l'iPad sert de plateau, chaque téléphone garde sa flotte et la montre à son joueur seul.</li></ul>
+  <ul><li><b>Contre l'ordinateur</b> : débutant, normal ou fort, hors ligne.</li>
+  <li><b>En ligne</b> : à deux, chacun place sa flotte et tire depuis son appareil. Un iPad peut être ouvert comme <b>plateau</b> : il montre les deux grilles (tirs, navires coulés) sans que personne ne joue dessus.</li></ul>
   <button class="btn gold" data-close>Compris</button>
 </div></dialog>
 
@@ -333,10 +308,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 
 <dialog id="dlgOver"><div class="dlg" id="overBody"></div></dialog>
 
-<script src="vendor/qrcode.js"></script>
-<script src="vendor/peerjs.min.js"></script>
 <script src="engine.js"></script>
-<script src="net.js"></script>
+<script src="en-ligne.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -1,15 +1,14 @@
 # Bataille navale
 
-La bataille navale à deux, en local, pour iPad et téléphone. Grille de 10 × 10, cinq navires (porte-avions 5, croiseur 4, contre-torpilleur 3, sous-marin 3, torpilleur 2). Fonctionne dans le navigateur, s'installe comme une application (PWA) et se joue hors ligne, sauf le jumelage du mode téléphone.
+La bataille navale à deux, en local, pour iPad et téléphone. Grille de 10 × 10, cinq navires (porte-avions 5, croiseur 4, contre-torpilleur 3, sous-marin 3, torpilleur 2). Fonctionne dans le navigateur, s'installe comme une application (PWA) ; contre l'ordinateur, elle se joue hors ligne.
 
-## Quatre modes
+## Deux modes
 
-- **Contre l'ordinateur** : trois niveaux (débutant, normal, fort). Tu places ta flotte à la main ou au hasard.
-- **On se passe l'appareil** : chaque joueur place sa flotte à son tour ; un écran masque la grille entre les tours.
-- **Face à face** : iPad posé à plat, une grille devant chacun, orientée vers son joueur. Chaque grille montre les tirs reçus par son propriétaire. On vise la grille de l'adversaire, on touche la case puis « Feu ! ».
-- **Flottes sur téléphone** : l'iPad est le plateau, chaque téléphone garde sa flotte secrète (placement, impacts reçus). Le jumelage se fait en scannant le QR code de l'iPad avec l'appareil photo du téléphone.
+- **Contre l'ordinateur** : trois niveaux (débutant, normal, fort), hors ligne. Tu places ta flotte à la main ou au hasard.
+- **En ligne** : à deux, chacun sur son appareil. Chacun place sa flotte en secret sur son écran, puis on tire chacun son tour depuis son appareil (on touche une case, puis « Feu ! »). Il faut le compte partagé de l'auteur pour créer ou rejoindre une partie (code à 4 lettres).
+- **Plateau (option, en ligne)** : un iPad ouvert comme plateau montre les deux grilles (tirs, navires coulés, dernier tir, tour). Personne ne joue dessus. Les flottes ne sont révélées qu'à la fin de la partie, sur le plateau comme sur les téléphones.
 
-Option : « le joueur qui touche rejoue » (sinon on alterne à chaque tir).
+Option, choisie à la création d'une partie : « le joueur qui touche rejoue » (sinon on alterne à chaque tir).
 
 ## Utiliser
 
@@ -17,15 +16,14 @@ Ouvrir la page publiée par GitHub Pages, puis « Ajouter à l'écran d'accueil 
 
 ## Documentation du projet
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) : organisation du code, modèle de données, protocole du mode téléphone.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) : organisation du code, modèle de données, mode En ligne et plateau.
 - [`CARNET_DE_BORD.md`](CARNET_DE_BORD.md) : toutes les opérations effectuées, l'état du projet et ce qui reste à faire.
-- [`THIRD_PARTY.md`](THIRD_PARTY.md) : bibliothèques tierces (PeerJS, qrcode-generator).
 
 ## Tests
 
 - `node --test tests/engine.test.js` : moteur (placement, tirs, niveaux de l'ordinateur).
-- `tests/e2e/*.py` : parcours complets dans un vrai navigateur (voir l'en-tête de chaque script).
+- `PYTHONDONTWRITEBYTECODE=1 python3 tests/e2e/en_ligne.py` : parcours complets dans un navigateur simulé (deux appareils, plateau, partie contre l'ordinateur) avec un faux serveur en mémoire.
 
 ## Licence
 
-Tous droits réservés © Maximeavril1869. Code publié pour consultation uniquement ; toute réutilisation exige l'autorisation écrite de l'auteur. Voir le fichier `LICENSE`. Les bibliothèques du dossier `vendor/` gardent leur propre licence (MIT).
+Tous droits réservés © Maximeavril1869. Code publié pour consultation uniquement ; toute réutilisation exige l'autorisation écrite de l'auteur. Voir le fichier `LICENSE`.

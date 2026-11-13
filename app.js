@@ -1,50 +1,56 @@
-/* Bataille navale — interface. Tout est local : la partie est sauvegardée dans le navigateur (localStorage).
-   Quatre modes : contre l'ordinateur ('solo'), à deux en se passant l'appareil ('passe'),
-   à deux face à face sur un iPad posé à plat ('duo'), et à deux avec une flotte secrète sur chaque
-   téléphone, l'iPad servant de plateau ('tel'). Un téléphone ouvre la même page avec #j=<code> (rôle « phone »). */
+/* Bataille navale — interface. Deux modes : contre l'ordinateur ('solo', sauvegardé dans le navigateur)
+   et en ligne ('online') : deux joueurs, chacun place sa flotte et tire depuis son appareil.
+   En ligne, l'état complet de la partie (flottes comprises) vit dans une ligne Supabase ; chaque appareil
+   n'affiche que ce qu'il doit montrer (sa flotte, les tirs). Un « plateau » (iPad en affichage seul) montre
+   les deux grilles de tirs ; personne ne joue dessus. */
 (function () {
   'use strict';
-  var E = window.Engine, Net = window.Net;
-  var SAVE_KEY = 'bn_partie_v1', PREF_KEY = 'bn_prefs_v1', PHONE_KEY = 'bn_phone_v1';
+  var E = window.Engine, EL = window.EnLigne;
+  var SAVE_KEY = 'bn_partie_v1', PREF_KEY = 'bn_prefs_v1', OKEY = 'bn_online_v1', APP_VERSION = '2';
   var LEVELS = ['', 'Débutant', 'Normal', 'Fort'];
 
-  var G = null;               // état de la partie (sérialisable) — sur l'iPad ou l'appareil local
+  var G = null;               // état de la partie (sérialisable)
+  var ONL = null;             // partie en ligne : { id, me, version, dirty, pushing, status, watch, retry, redo }
+  var PT = null;              // plateau ouvert sur cet appareil : { id, version, watch }
+  var MY = { gen: 0, ships: [] };   // en ligne : ma flotte en cours de placement (reste sur cet appareil jusqu'à validation)
   var sel = null;             // case visée, pas encore tirée : [r, c]
-  var busy = false;           // l'ordinateur joue, ou on attend la réponse d'un téléphone
+  var busy = false;           // l'ordinateur joue
   var flash = '';             // message passager
   var ui = { horiz: true, ship: null };   // placement : orientation et navire sélectionné
-  var PL = null;              // contexte de placement (local ou téléphone)
-  var host = null, slots = [null, null], pending = null, shotSeq = 0;   // mode téléphone, côté iPad
-  var Ph = null, phNet = null;                                          // mode téléphone, côté téléphone
+  var PL = null;              // contexte de placement
   var overOpen = false;
-  var prefs = { mode: 'solo', level: 2, rejoue: false, n1: 'Joueur 1', n2: 'Joueur 2', pname: '' };
+  var prefs = { mode: 'solo', level: 2, rejoue: false, n1: '' };
 
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function qa(sel2, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel2)); }
-  function baseUrl() { return location.href.split('#')[0].split('?')[0]; }
+  function delay(ms) { return window.BOT_DELAY != null ? window.BOT_DELAY : ms; }
+  function online() { return !!G && G.mode === 'online'; }
+  function me() { return online() && ONL ? ONL.me : 0; }
 
-  /* ---------- Sauvegarde ---------- */
-  function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch (e) {} }
-  function loadSave() { try { var s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  /* ---------- Sauvegarde (contre l'ordinateur seulement : une partie en ligne vit sur le serveur) ---------- */
+  function save() {
+    if (G && G.mode === 'online') { if (ONL) { ONL.dirty = true; pushState(); } return; }
+    try { if (G) localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch (e) {}
+  }
+  function loadSave() {
+    try { var s = localStorage.getItem(SAVE_KEY), g = s ? JSON.parse(s) : null; return g && g.mode === 'solo' && g.fleets && g.phase ? g : null; } catch (e) { return null; }
+  }
   function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
   function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) {} }
   function loadPrefs() {
     try {
       var p = JSON.parse(localStorage.getItem(PREF_KEY));
       if (!p) return;
-      if (['solo', 'passe', 'duo', 'tel'].indexOf(p.mode) >= 0) prefs.mode = p.mode;
+      if (p.mode === 'online') prefs.mode = 'online';   // « on se passe l'appareil », « face à face » et « téléphone » n'existent plus
       prefs.level = Math.min(3, Math.max(1, p.level || 2));
       prefs.rejoue = !!p.rejoue;
-      if (p.n1) prefs.n1 = p.n1; if (p.n2) prefs.n2 = p.n2; if (p.pname) prefs.pname = p.pname;
+      if (typeof p.n1 === 'string' && p.n1 !== 'Joueur 1') prefs.n1 = p.n1;
     } catch (e) {}
   }
-  function savePhone() { try { localStorage.setItem(PHONE_KEY, JSON.stringify(Ph)); } catch (e) {} }
-  function loadPhone() { try { var s = localStorage.getItem(PHONE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-  function clearPhone() { try { localStorage.removeItem(PHONE_KEY); } catch (e) {} }
 
   /* ---------- Écrans ---------- */
-  var SCREENS = ['home', 'place', 'battle', 'duo', 'telhost', 'phone'];
+  var SCREENS = ['home', 'place', 'battle', 'fleetwait', 'plateau'];
   function show(id) { SCREENS.forEach(function (s) { $(s).hidden = s !== id; }); }
 
   /* ---------- Grille en HTML ----------
@@ -102,32 +108,35 @@
   function setFlash(t) { flash = t; renderAll(); setTimeout(function () { if (flash === t) { flash = ''; renderAll(); } }, 4500); }
 
   /* ================= Nouvelle partie ================= */
-  function newGame() {
-    var mode = prefs.mode;
-    G = {
-      v: 1, mode: mode, level: prefs.level, rejoue: prefs.rejoue,
-      names: mode === 'solo' ? ['Toi', 'Ordinateur'] : [prefs.n1.trim() || 'Joueur 1', prefs.n2.trim() || 'Joueur 2'],
-      phase: 'place', placing: 0, veil: null, turn: 0, view: 0, await: false,
+  function makeGame(mode, names) {
+    return {
+      v: 2, mode: mode, gen: 1, level: prefs.level, rejoue: prefs.rejoue, names: names,
+      phase: 'place', turn: 0,
       fleets: [[], []], inc: [E.emptyMatrix(), E.emptyMatrix()], sunk: [[], []],
-      last: null, winner: -1, shots: [0, 0], ready: [false, false], tokens: [null, null], hostId: null
+      last: null, winner: -1, shots: [0, 0], ready: [false, false]
     };
+  }
+  function newGame() {
+    G = makeGame('solo', ['Toi', 'Ordinateur']);
     sel = null; busy = false; flash = ''; ui.ship = null; ui.horiz = true; overOpen = false;
-    if (mode === 'tel') { G.fleets = [null, null]; openHost(null); }
-    setPlacement();
     save(); renderAll();
   }
 
   /* ================= Placement ================= */
   function setPlacement() {
-    if (!G || G.mode === 'tel') return;
-    PL = {
-      get: function () { return G.fleets[G.placing]; },
-      set: function (a) { G.fleets[G.placing] = a; },
-      title: function () { return G.mode === 'solo' ? 'Place ta flotte' : G.names[G.placing] + ' : place ta flotte'; },
-      sub: function () { return G.mode === 'solo' ? 'L\'ordinateur place la sienne en secret' : 'Les autres ne regardent pas l\'écran'; },
-      rot: function () { return G.mode === 'duo' && G.placing === 1; },
-      persist: save, onOk: commitFleet
-    };
+    if (online()) {
+      PL = {
+        get: function () { return MY.ships; }, set: function (a) { MY.ships = a; },
+        title: function () { return 'Place ta flotte'; }, sub: function () { return 'Ton adversaire ne la voit pas'; },
+        persist: saveMy, onOk: commitReady
+      };
+    } else {
+      PL = {
+        get: function () { return G.fleets[0]; }, set: function (a) { G.fleets[0] = a; },
+        title: function () { return 'Place ta flotte'; }, sub: function () { return 'L\'ordinateur place la sienne en secret'; },
+        persist: save, onOk: commitFleet
+      };
+    }
   }
   function nextUnplaced(ships) {
     for (var i = 0; i < E.FLEET.length; i++) {
@@ -143,7 +152,6 @@
     var ships = PL.get();
     if (ui.ship && ships.some(function (s) { return s.id === ui.ship; })) ui.ship = null;
     if (!ui.ship) ui.ship = nextUnplaced(ships);
-    $('place').classList.toggle('rot', PL.rot());
     $('plTitle').textContent = PL.title();
     $('plSub').textContent = PL.sub();
     $('plGrid').innerHTML = gridHTML({ id: 'pl', inc: E.emptyMatrix(), ships: ships });
@@ -173,27 +181,29 @@
     ui.ship = null;
     PL.persist(); renderPlace();
   }
-  function commitFleet() {
-    var p = G.placing;
-    if (!E.isComplete(G.fleets[p])) return;
-    if (G.mode === 'solo') { G.fleets[1] = E.randomFleet(); startBattle(); return; }
-    if (p === 0) { G.placing = 1; ui.ship = null; G.veil = { kind: 'place', who: 1 }; save(); renderAll(); return; }
-    startBattle();
-  }
-  function startBattle() {
-    G.phase = 'battle'; G.placing = -1; G.turn = Math.random() < 0.5 ? 0 : 1; G.view = G.turn; G.await = false;
-    if (G.mode === 'passe') G.veil = { kind: 'turn', who: G.turn, start: true };
-    else G.veil = null;
+  function commitFleet() {                                     // contre l'ordinateur
+    if (!E.isComplete(G.fleets[0])) return;
+    G.fleets[1] = E.randomFleet();
+    G.phase = 'battle'; G.turn = Math.random() < 0.5 ? 0 : 1;
     sel = null; save(); renderAll(); maybeBot();
+  }
+  function commitReady() {                                     // en ligne : la flotte part sur le serveur, la partie démarre quand les deux sont prêts
+    if (!ONL || !E.isComplete(MY.ships)) return;
+    var who = ONL.me, ships = JSON.parse(JSON.stringify(MY.ships));
+    function apply() {
+      G.fleets[who] = ships; G.ready[who] = true;
+      if (G.phase === 'place' && G.ready[0] && G.ready[1]) { G.phase = 'battle'; G.turn = Math.random() < 0.5 ? 0 : 1; G.last = null; }
+    }
+    apply();
+    ONL.redo = apply;          // si l'autre joueur écrit au même moment, on rejoue notre validation sur son état
+    save(); onlineShow();
   }
 
   /* ================= Tirs ================= */
   function canAim(p, target) {
-    // `p` peut-il viser la grille de `target` en ce moment ?
-    if (!G || G.phase !== 'battle' || busy || G.veil || G.await) return false;
+    if (!G || G.phase !== 'battle' || busy) return false;
     if (G.turn !== p || target !== 1 - p) return false;
-    if (G.mode === 'tel' && !telBothConnected()) return false;
-    return true;
+    return p === me();
   }
   function aim(p, target, r, c) {
     if (!canAim(p, target) || G.inc[target][r][c] !== 0) return;
@@ -201,20 +211,17 @@
     sel = [r, c]; renderAll();
   }
   function fireSelected() {
-    if (!sel) return;
-    var p = G.turn, r = sel[0], c = sel[1];
-    if (G.mode === 'tel') { telFire(p, r, c); return; }
-    var t = 1 - p, res = E.fire(G.fleets[t], G.inc[t], G.sunk[t], r, c);
+    if (!sel || !canAim(me(), 1 - me())) return;
+    var p = me(), t = 1 - p, res = E.fire(G.fleets[t], G.inc[t], G.sunk[t], sel[0], sel[1]);
     if (res) afterShot(p, res);
   }
   function afterShot(p, res) {
     sel = null; G.shots[p]++;
     G.last = { by: p, r: res.r, c: res.c, res: res.res, name: res.ship ? res.ship.name : null };
     var again = !res.allSunk && G.rejoue && res.res !== 'miss';
-    if (res.allSunk) { G.phase = 'over'; G.winner = p; G.await = false; }
-    else if (!again) { G.turn = 1 - p; if (G.mode === 'passe') G.await = true; }
+    if (res.allSunk) { G.phase = 'over'; G.winner = p; }
+    else if (!again) G.turn = 1 - p;
     save();
-    if (G.mode === 'tel') telBroadcast();
     renderAll();
     if (G.phase === 'battle') maybeBot();
   }
@@ -227,15 +234,14 @@
       var res = E.fire(G.fleets[0], G.inc[0], G.sunk[0], pos[0], pos[1]);
       busy = false;
       if (res) afterShot(1, res);
-    }, 900 + Math.random() * 500);
+    }, delay(900 + Math.random() * 500));
   }
 
-  /* ================= Affichage : un joueur devant l'appareil (ordinateur, passe-passe) ================= */
-  function viewer() { return G.mode === 'solo' ? 0 : G.view; }
+  /* ================= Affichage : un joueur devant son appareil ================= */
   function renderBattle() {
-    var v = viewer(), o = 1 - v, over = G.phase === 'over', myTurn = canAim(v, o);
-    $('bTitle').textContent = G.mode === 'solo' ? 'Bataille navale' : G.names[v];
-    $('bSub').textContent = (G.mode === 'solo' ? 'Ordinateur : ' + LEVELS[G.level] + ' · ' : '') + 'tes tirs : ' + G.shots[v];
+    var v = me(), o = 1 - v, over = G.phase === 'over', myTurn = canAim(v, o);
+    $('bTitle').textContent = online() ? G.names[v] : 'Bataille navale';
+    $('bSub').textContent = (online() ? '' : 'Ordinateur : ' + LEVELS[G.level] + ' · ') + 'tes tirs : ' + G.shots[v];
     $('bCap1').innerHTML = '<b>Eaux de ' + esc(G.names[o]) + '</b><span>' + shipsLeft(G.sunk[o]) + ' navires à flot</span>';
     $('bCap2').innerHTML = '<b>Ta flotte</b><span>' + shipsLeft(G.sunk[v]) + ' navires à flot</span>';
     $('bTarget').innerHTML = gridHTML({ id: 'bt', inc: G.inc[o], sunk: G.sunk[o], ships: over ? G.fleets[o] : null,
@@ -246,67 +252,15 @@
     var line = '', small = G.last ? lastText(v) : '';
     if (flash) line = flash;
     else if (over) line = G.winner === v ? 'Victoire ! Toute la flotte adverse est coulée.' : 'Ta flotte est coulée.';
-    else if (G.await) line = 'Tour terminé. Passe l\'appareil à ' + G.names[G.turn] + '.';
     else if (G.turn === v) line = sel ? 'Cible : <b>' + E.coord(sel[0], sel[1]) + '</b>. Touche encore la case ou « Feu ! ».' : 'À toi de tirer : touche une case des eaux de ' + esc(G.names[o]) + '.';
     else line = G.names[G.turn] + ' vise…';
     $('bMsg').innerHTML = '<span>' + line + '</span>' + (small && !over ? '<small>' + esc(small) + '</small>' : '');
-    $('bMsg').className = 'msg' + (G.turn === v && !G.await && !over ? ' alert' : '');
+    $('bMsg').className = 'msg' + (G.turn === v && !over ? ' alert' : '');
     var b = $('bAction'); b.disabled = true; b.className = 'btn fire';
     if (over) { b.textContent = 'Voir le résultat'; b.disabled = false; b.className = 'btn gold'; }
-    else if (G.await) { b.textContent = 'Passer l\'appareil à ' + G.names[G.turn]; b.disabled = false; b.className = 'btn gold'; }
     else if (myTurn && sel) { b.textContent = 'Feu en ' + E.coord(sel[0], sel[1]) + ' !'; b.disabled = false; }
     else if (G.turn === v) b.textContent = 'Choisis une case à viser';
     else b.textContent = 'Au tour de ' + G.names[G.turn] + '…';
-  }
-
-  /* ================= Affichage : face à face (iPad à plat) ================= */
-  function renderDuo() {
-    var over = G.phase === 'over', tel = G.mode === 'tel';
-    for (var p = 0; p < 2; p++) {
-      var seat = $('seat' + p), o = 1 - p, armed = canAim(o, p);
-      seat.classList.toggle('turn', G.phase === 'battle' && G.turn === p);
-      seat.querySelector('.seathead b').textContent = G.names[p];
-      seat.querySelector('.seathead span').textContent = shipsLeft(G.sunk[p]) + ' navires à flot';
-      seat.querySelector('.gridwrap').innerHTML = gridHTML({ id: 'd' + p, inc: G.inc[p], sunk: G.sunk[p],
-        ships: over && !tel ? G.fleets[p] : null, last: G.last && G.last.by === o ? G.last : null,
-        armed: armed, tgt: armed ? sel : null });
-      var line = '', small = G.last ? lastText(p) : '';
-      if (flash) line = flash;
-      else if (over) line = G.winner === p ? 'Victoire en ' + G.shots[p] + ' tirs !' : G.names[o] + ' a coulé toute ta flotte.';
-      else if (tel && !telBothConnected()) line = 'Un téléphone est déconnecté : le jeu reprend dès qu\'il revient.';
-      else if (busy && G.turn === p) line = 'Tir en cours…';
-      else if (G.turn === p) line = sel ? 'Cible : <b>' + E.coord(sel[0], sel[1]) + '</b>. Touche « Feu ! » ou la case.' : 'À toi : touche une case de la grille de ' + esc(G.names[o]) + '.';
-      else line = 'Au tour de ' + esc(G.names[o]) + '…';
-      var m = seat.querySelector('.msg');
-      m.innerHTML = '<span>' + line + '</span>' + (small && !over ? '<small>' + esc(small) + '</small>' : '');
-      m.className = 'msg' + (G.turn === p && !over ? ' alert' : '');
-      var b = seat.querySelector('.fire');
-      b.disabled = !(canAim(p, o) && sel);
-      b.textContent = over ? 'Terminé' : (sel && G.turn === p ? 'Feu en ' + E.coord(sel[0], sel[1]) + ' !' : 'Feu !');
-    }
-  }
-
-  /* ================= Voile « passe l'appareil » ================= */
-  function renderVeil() {
-    var v = G && G.veil;
-    $('veil').hidden = !v;
-    if (!v) return;
-    var n = G.names[v.who];
-    $('veil').classList.toggle('rot', G.mode === 'duo' && v.who === 1);
-    if (v.kind === 'place') {
-      $('veilTitle').textContent = 'À ' + n + ' de placer sa flotte';
-      $('veilText').textContent = 'Passe l\'appareil à ' + n + '. Que l\'autre joueur détourne les yeux.';
-      $('btnVeil').textContent = 'Je suis prêt';
-    } else {
-      $('veilTitle').textContent = 'À ' + n + ' de jouer';
-      $('veilText').textContent = v.start ? 'Le hasard a désigné ' + n + ' pour commencer. Passe-lui l\'appareil.' : 'Passe l\'appareil à ' + n + '.';
-      $('btnVeil').textContent = 'Voir ma grille';
-    }
-  }
-  function dismissVeil() {
-    if (!G || !G.veil) return;
-    if (G.veil.kind === 'turn') G.view = G.veil.who;
-    G.veil = null; sel = null; save(); renderAll();
   }
 
   /* ================= Fin de partie ================= */
@@ -314,253 +268,291 @@
     if (overOpen || !G || G.phase !== 'over') return;
     overOpen = true;
     var w = G.winner, txt;
-    if (G.mode === 'solo') txt = w === 0 ? 'Victoire ! Tu as coulé toute la flotte en ' + G.shots[0] + ' tirs.' : 'Défaite. L\'ordinateur a coulé ta flotte en ' + G.shots[1] + ' tirs.';
-    else txt = esc(G.names[w]) + ' gagne en ' + G.shots[w] + ' tirs !';
-    var h = '<h2 class="cond">' + (G.mode === 'solo' ? (w === 0 ? 'Victoire' : 'Défaite') : 'Partie terminée') + '</h2><p>' + txt + '</p>' +
+    if (!online()) txt = w === 0 ? 'Victoire ! Tu as coulé toute la flotte en ' + G.shots[0] + ' tirs.' : 'Défaite. L\'ordinateur a coulé ta flotte en ' + G.shots[1] + ' tirs.';
+    else txt = (w === me() ? 'Victoire ! Tu gagnes' : esc(G.names[w]) + ' gagne') + ' en ' + G.shots[w] + ' tirs !';
+    var h = '<h2 class="cond">' + (!online() ? (w === 0 ? 'Victoire' : 'Défaite') : 'Partie terminée') + '</h2><p>' + txt + '</p>' +
             '<p>Tirs : ' + esc(G.names[0]) + ' ' + G.shots[0] + ' · ' + esc(G.names[1]) + ' ' + G.shots[1] + '</p>' +
             '<button class="btn gold" id="ovAgain" style="max-width:none">Rejouer</button>' +
             '<button class="btn ghost" id="ovHome" style="max-width:none">Accueil</button>' +
             '<button class="btn ghost" id="ovClose" style="max-width:none">Revoir les grilles</button>';
     $('overBody').innerHTML = h;
     var d = $('dlgOver'); if (!d.open) d.showModal();
-    $('ovAgain').onclick = function () { d.close(); overOpen = false; if (G.mode === 'tel') telRematch(); else newGame(); };
+    $('ovAgain').onclick = function () { d.close(); overOpen = false; if (online()) restartOnline(); else { clearSave(); newGame(); } };
     $('ovHome').onclick = function () { d.close(); goHome(); };
     $('ovClose').onclick = function () { d.close(); };
   }
+  function closeOver() { overOpen = false; var d = $('dlgOver'); if (d.open) d.close(); }
 
   /* ================= Dispatch d'affichage ================= */
   function renderAll() {
-    if (!G) return;
+    if (!G || PT) return;
+    if (online() && !G.online.joined) return;                       // salle d'attente (#wait)
     if (G.phase === 'place') {
-      if (G.mode === 'tel') { show('telhost'); renderTelHost(); }
-      else { show('place'); renderPlace(); }
-    } else if (G.mode === 'duo' || G.mode === 'tel') { show('duo'); renderDuo(); }
-    else { show('battle'); renderBattle(); }
-    renderVeil();
+      if (online() && G.ready[me()]) {
+        show('fleetwait');
+        $('fwText').textContent = 'En attente de la flotte de ' + G.names[1 - me()] + '…';
+      } else { setPlacement(); show('place'); renderPlace(); }
+    } else { show('battle'); renderBattle(); }
     if (G.phase === 'over') showOver();
   }
 
   /* ================= Accueil ================= */
   function goHome() {
-    if (host) { host.close(); host = null; slots = [null, null]; }
+    ptStop();
+    if (ONL) onlineStop();
+    closeOver();
     $('dlgMenu').open && $('dlgMenu').close();
+    G = null; $('wait').hidden = true;
     show('home'); renderHome();
   }
   function renderHome() {
+    var on = prefs.mode === 'online';
     qa('#segMode button').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-m') === prefs.mode); });
     qa('#segLevel button').forEach(function (b) { b.classList.toggle('on', +b.getAttribute('data-l') === prefs.level); });
-    $('optLevel').hidden = prefs.mode !== 'solo';
-    $('optNames').hidden = prefs.mode !== 'passe' && prefs.mode !== 'duo';
+    $('optLevel').hidden = on;
+    $('optNames').hidden = !on;
+    $('onlinePanel').hidden = !on;
     $('swRejoue').classList.toggle('on', prefs.rejoue);
-    $('n1').value = prefs.n1; $('n2').value = prefs.n2;
+    if (document.activeElement !== $('n1')) $('n1').value = prefs.n1;
     var s = loadSave();
-    $('btnResume').hidden = !s || s.v !== 1 || (s.phase === 'over');
+    $('btnResume').hidden = on || !s || s.phase === 'over';
+    $('btnNew').disabled = on && !EL.connecte();
+    $('ver').textContent = 'Version ' + APP_VERSION;
+    if (on) olRender();
   }
   function resume() {
     var s = loadSave();
     if (!s) return;
     G = s; sel = null; busy = false; flash = ''; ui.ship = null; overOpen = false;
-    if (G.mode === 'tel') { slots = [null, null]; openHost(G.hostId); }
-    setPlacement();
     renderAll(); maybeBot();
   }
 
-  /* ================= Mode téléphone : côté iPad ================= */
-  function telBothConnected() { return !!(slots[0] && slots[0].connected && slots[1] && slots[1].connected); }
-  function openHost(id) {
-    if (host) host.close();
-    if (!Net || !Net.available()) { if (G) { G.hostErr = 'La liaison entre appareils n\'a pas pu se charger.'; } return; }
-    G.hostErr = '';
-    host = Net.createHost({
-      id: id,
-      onOpen: function (pid) { G.hostId = pid; save(); renderAll(); },
-      onMessage: telOnMessage,
-      onClose: function (conn) {
-        for (var i = 0; i < 2; i++) if (slots[i] && slots[i].conn === conn) { slots[i].connected = false; }
-        renderAll();
-      },
-      onError: function (err) {
-        G.hostErr = err && err.type === 'network' ? 'Pas de connexion au service de mise en relation. Vérifie le Wi-Fi.' : 'Liaison impossible (' + (err && err.type || 'erreur') + ').';
-        renderAll();
-      }
+  /* ================= En ligne ================= */
+  var OFF_TXT = $('offbar').textContent;
+  function olMsg(t) { var e = $('olErr'); e.hidden = !t; e.textContent = t || ''; }
+  function olError(e) {
+    if (e && e.kind === 'auth') { olMsg('Session expirée : reconnecte-toi.'); olRender(); }
+    else if (e && e.kind === 'reseau') olMsg('Pas de réseau : impossible de joindre le service pour l\'instant.');
+    else olMsg('Erreur : ' + (e && e.message ? e.message : 'inconnue'));
+  }
+  function olRender() {
+    var inn = EL.connecte();
+    $('olLogin').hidden = inn; $('olIn').hidden = !inn;
+    $('btnNew').disabled = prefs.mode === 'online' && !inn;
+    if (inn) { $('olWho').textContent = EL.email(); olList(); }
+  }
+  function olList() {
+    EL.liste('bataillenavale').then(function (a) {
+      var h = '';
+      a.forEach(function (r) {
+        h += '<div class="olitem"><div class="t"><b>' + esc(r.id) + '</b><small>' + esc(r.titre || '') + '</small></div>' +
+          '<button data-ol="resume" data-id="' + esc(r.id) + '">Reprendre</button><button data-ol="del" data-id="' + esc(r.id) + '" aria-label="Supprimer la partie ' + esc(r.id) + '">✕</button></div>';
+      });
+      $('olList').innerHTML = h || '<p class="olwho" style="margin:0">Aucune pour l\'instant.</p>';
+    }).catch(olError);
+  }
+  function getMap() { try { return JSON.parse(localStorage.getItem(OKEY)) || {}; } catch (e) { return {}; } }
+  function putMap(m) { try { localStorage.setItem(OKEY, JSON.stringify(m)); } catch (e) { /* rien */ } }
+  function setSeat(id, seat) { var m = getMap(), e = m[id] || {}; e.me = seat; m[id] = e; putMap(m); }
+  function saveMy() { if (!ONL) return; var m = getMap(), e = m[ONL.id] || {}; e.gen = MY.gen; e.ships = MY.ships; m[ONL.id] = e; putMap(m); }
+  function loadMy(id, gen) { var e = getMap()[id]; return e && e.gen === gen && e.ships ? e.ships : []; }
+  function titre() {
+    var n = G.names.filter(function (x) { return x !== '…'; }).join(' et ');
+    if (!G.online.joined) return n + ' · en attente';
+    return n + ' · ' + (G.phase === 'place' ? 'placement' : G.phase === 'over' ? 'terminée' : (G.shots[0] + G.shots[1]) + ' tirs');
+  }
+  function onlineStart(id, seat, version) {
+    onlineStop();
+    ONL = { id: id, me: seat, version: version, dirty: false, pushing: false, status: 'ok', watch: null, retry: null, redo: null };
+    setSeat(id, seat);
+    MY = { gen: G.gen, ships: loadMy(id, G.gen) };
+    ui.ship = null;
+    ONL.watch = EL.surveiller(id, function () { return ONL ? ONL.version : 0; }, onRemote, onStatus);
+  }
+  function onlineStop() {
+    if (ONL) { if (ONL.watch) ONL.watch.stop(); clearTimeout(ONL.retry); }
+    ONL = null;
+    $('offbar').hidden = true; $('wait').hidden = true;
+  }
+  function onStatus(st) {
+    if (!ONL) return;
+    ONL.status = st;
+    $('offbar').hidden = st !== 'hors-ligne';
+    if (st === 'supprimee') { goHome(); olMsg('Cette partie a été supprimée.'); return; }
+    if (st === 'auth') { goHome(); olError({ kind: 'auth' }); return; }
+    if (st === 'ok' && ONL.dirty && !ONL.pushing) pushState();
+  }
+  function onlineShow() {          // affiche G selon son avancement : salle d'attente, placement, bataille
+    if (!G.online.joined) { $('waitCode').textContent = ONL.id; $('wait').hidden = false; return; }
+    $('wait').hidden = true;
+    if (G.gen !== MY.gen) { MY = { gen: G.gen, ships: [] }; saveMy(); ui.ship = null; }   // nouvelle partie (« Rejouer »)
+    if (G.phase !== 'over') closeOver();
+    renderAll();
+  }
+  function takeRemote(row) {       // l'état du serveur remplace le nôtre
+    G = row.etat; ONL.version = row.version; sel = null;
+  }
+  function onRemote() {
+    var o = ONL;
+    if (!o || o.pushing || o.dirty) return;
+    return EL.lire(o.id).then(function (row) {
+      if (ONL !== o || !row || row.version <= o.version || o.pushing || o.dirty) return;
+      takeRemote(row);
+      onlineShow();
     });
   }
-  function telState(slot) {
-    return { t: 'state', slot: slot, names: G.names, phase: G.phase, turn: G.turn, winner: G.winner, last: G.last, ready: G.ready };
+  function pushState() {
+    var o = ONL;
+    if (!o || o.pushing || !o.dirty) return;
+    o.pushing = true; o.dirty = false;
+    EL.ecrire(o.id, o.version, G, titre()).then(function (nv) {
+      if (ONL !== o) return;
+      o.pushing = false;
+      if (nv) { o.version = nv; o.redo = null; if (o.status === 'hors-ligne') onStatus('ok'); if (o.dirty) pushState(); return; }
+      // conflit : l'autre appareil a écrit avant nous. Son état l'emporte ; seule la validation de flotte est rejouée dessus.
+      return EL.lire(o.id).then(function (row) {
+        if (ONL !== o || !row) return;
+        o.dirty = false; takeRemote(row);
+        if (G.online.uids.indexOf(EL.uid()) < 0) { goHome(); olMsg('Cette partie a déjà ses deux joueurs.'); return; }
+        if (o.redo && G.phase === 'place' && !G.ready[o.me]) { o.redo(); o.dirty = true; onlineShow(); pushState(); return; }
+        o.redo = null;
+        if (G.phase === 'battle') flash = 'Ton action a été annulée : l\'autre appareil a joué en même temps.';
+        onlineShow();
+        if (flash) setTimeout(function () { flash = ''; if (G && ONL === o) renderAll(); }, 4500);
+      });
+    }).catch(function (e) {
+      if (ONL !== o) return;
+      o.pushing = false; o.dirty = true;
+      onStatus(e && e.kind === 'reseau' ? 'hors-ligne' : 'erreur');
+      if (e && e.kind === 'auth') return;
+      clearTimeout(o.retry);
+      o.retry = setTimeout(function () { if (ONL === o) pushState(); }, 2000);
+    });
   }
-  function telBroadcast() {
-    for (var i = 0; i < 2; i++) if (slots[i] && slots[i].connected) { try { slots[i].conn.send(telState(i)); } catch (e) {} }
+  function onlineCreate() {
+    var nm = (prefs.n1 || '').trim() || 'Joueur 1';
+    savePrefs();
+    var g = makeGame('online', [nm, '…']);
+    g.online = { uids: [EL.uid(), null], joined: false };
+    EL.creer('bataillenavale', g, nm + ' · en attente').then(function (r) {
+      G = g; overOpen = false; onlineStart(r.id, 0, r.version); onlineShow();
+    }).catch(olError);
   }
-  function telOnMessage(conn, m) {
-    if (!G || G.mode !== 'tel' || !m) return;
-    if (m.t === 'hello') {
-      var i = -1, k;
-      for (k = 0; k < 2; k++) if (G.tokens[k] && G.tokens[k] === m.token) i = k;
-      if (i < 0) for (k = 0; k < 2; k++) if (!G.tokens[k]) { i = k; break; }
-      if (i < 0) { try { conn.send({ t: 'full' }); } catch (e) {} return; }
-      G.tokens[i] = m.token;
-      slots[i] = { conn: conn, connected: true };
-      if (m.name && (G.phase === 'place' && !G.ready[i])) G.names[i] = String(m.name).slice(0, 14);
-      save(); renderAll();
-      try { conn.send(telState(i)); } catch (e) {}
-      telBroadcast();
-    } else if (m.t === 'ready') {
-      var s = slotOf(conn); if (s < 0) return;
-      if (G.phase === 'place') G.ready[s] = true;
-      if (G.phase === 'place' && G.ready[0] && G.ready[1] && telBothConnected()) {
-        G.phase = 'battle'; G.turn = Math.random() < 0.5 ? 0 : 1; G.last = null;
-      }
-      save(); telBroadcast(); renderAll();
-    } else if (m.t === 'res') {
-      if (!pending || m.seq !== pending.seq) return;
-      clearTimeout(pending.timer);
-      var p = pending.p; pending = null; busy = false;
-      if (m.res && E.applyResult(G.inc[1 - p], G.sunk[1 - p], m.res)) afterShot(p, m.res);
-      else renderAll();
-    }
+  function restartOnline() {       // « Rejouer » en ligne : même code, mêmes joueurs, nouveau placement
+    var o = G.online, gen = G.gen + 1, ng = makeGame('online', G.names.slice());
+    ng.rejoue = G.rejoue; ng.gen = gen; ng.online = o;
+    G = ng; sel = null; MY = { gen: gen, ships: [] }; saveMy();
+    save(); onlineShow();
   }
-  function slotOf(conn) { for (var i = 0; i < 2; i++) if (slots[i] && slots[i].conn === conn) return i; return -1; }
-  function telFire(p, r, c) {
-    var t = 1 - p, slot = slots[t];
-    if (!slot || !slot.connected) { setFlash('Le téléphone de ' + G.names[t] + ' est déconnecté.'); return; }
-    busy = true; var seq = ++shotSeq;
-    pending = { seq: seq, p: p };
-    try { slot.conn.send({ t: 'shot', seq: seq, r: r, c: c }); } catch (e) { busy = false; pending = null; setFlash('Envoi impossible. Réessaie.'); return; }
-    pending.timer = setTimeout(function () {
-      if (pending && pending.seq === seq) { pending = null; busy = false; sel = null; setFlash('Pas de réponse du téléphone de ' + G.names[t] + '. Réessaie.'); }
-    }, 8000);
-    renderAll();
+  function seatFor(id, g) {
+    var e = getMap()[id], seat = e ? e.me : null;
+    if (seat == null && g.online) { var k = g.online.uids.indexOf(EL.uid()); if (k >= 0) seat = k; }
+    return seat;
   }
-  function telRematch() {
-    G.phase = 'place'; G.inc = [E.emptyMatrix(), E.emptyMatrix()]; G.sunk = [[], []]; G.last = null; G.winner = -1;
-    G.shots = [0, 0]; G.ready = [false, false]; G.turn = 0; sel = null; busy = false; overOpen = false;
-    save();
-    for (var i = 0; i < 2; i++) if (slots[i] && slots[i].connected) { try { slots[i].conn.send({ t: 'newgame' }); slots[i].conn.send(telState(i)); } catch (e) {} }
-    renderAll();
+  function onlineJoin(code) {
+    code = (code || '').trim().toUpperCase();
+    if (code.length !== 4) { olMsg('Le code a 4 lettres.'); return; }
+    olMsg('');
+    EL.lire(code).then(function (row) {
+      if (!row || row.jeu !== 'bataillenavale') { olMsg('Code inconnu.'); return; }
+      var g = row.etat, seat = seatFor(code, g);
+      if (seat != null && (g.online.joined || seat === 0)) { G = g; overOpen = false; onlineStart(code, seat, row.version); onlineShow(); return; }
+      if (g.online.joined) { olMsg('Cette partie a déjà ses deux joueurs.'); return; }
+      var nm = (prefs.n1 || '').trim() || 'Joueur 2';
+      if (nm === g.names[0]) nm += ' (2)';
+      G = g; overOpen = false; onlineStart(code, 1, row.version);
+      G.names[1] = nm; G.online.uids[1] = EL.uid(); G.online.joined = true;
+      save(); onlineShow();
+    }).catch(olError);
   }
-  function renderTelHost() {
-    $('thSub').textContent = G.hostId ? 'Les deux téléphones sur le même Wi-Fi que l\'iPad' : 'Ouverture de la liaison…';
-    var box = $('qr');
-    if (G.hostId && window.qrcode) {
-      var url = baseUrl() + '#j=' + G.hostId;
-      if (box.getAttribute('data-url') !== url) {
-        var qr = window.qrcode(0, 'M'); qr.addData(url); qr.make();
-        box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
-        box.setAttribute('data-url', url);
-      }
-      box.hidden = false;
-    } else box.hidden = true;
-    for (var i = 0; i < 2; i++) {
-      var row = $('slot' + i), on = !!(slots[i] && slots[i].connected);
-      row.classList.toggle('on', on);
-      row.querySelector('b').textContent = on || G.tokens[i] ? G.names[i] : 'Joueur ' + (i + 1);
-      row.querySelector('.st').textContent = on ? (G.ready[i] ? 'Flotte prête' : 'Place sa flotte…') : (G.tokens[i] ? 'Déconnecté' : 'En attente');
-    }
-    $('thMsg').textContent = G.hostErr || (telBothConnected() ? 'La partie commence dès que les deux flottes sont prêtes.' : 'Si le scan ne marche pas, vérifie que les deux appareils sont sur le même Wi-Fi.');
+  function onlineResume(id) {
+    olMsg('');
+    EL.lire(id).then(function (row) {
+      if (!row) { olMsg('Partie introuvable.'); olList(); return; }
+      var seat = seatFor(id, row.etat);
+      G = row.etat; overOpen = false; onlineStart(row.id, seat != null ? seat : 0, row.version); onlineShow();
+    }).catch(olError);
   }
 
-  /* ================= Mode téléphone : côté téléphone ================= */
-  function phoneInit(hostId) {
-    var saved = loadPhone();
-    if (saved && saved.hostId === hostId && saved.token) Ph = saved;
-    else Ph = { hostId: hostId, token: Net.randomId() + Net.randomId(), slot: -1, name: prefs.pname || '', phase: 'join', ships: [], inc: E.emptyMatrix(),
-                sunk: [], names: ['Joueur 1', 'Joueur 2'], turn: -1, winner: -1, last: null, ready: false, log: [] };
-    PL = {
-      get: function () { return Ph.ships; }, set: function (a) { Ph.ships = a; },
-      title: function () { return 'Place ta flotte'; }, sub: function () { return 'Personne d\'autre ne voit ton téléphone'; },
-      rot: function () { return false; }, persist: savePhone,
-      onOk: function () { Ph.ready = true; Ph.phase = 'wait'; savePhone(); if (phNet) phNet.send({ t: 'ready' }); phoneRender(); }
-    };
-    $('phName').value = Ph.name;
-    if (Ph.slot >= 0) phoneConnect(); else phoneRender();
+  /* ================= Plateau : affichage seul (iPad commun) ================= */
+  // Lit la partie, n'y écrit jamais. Montre les tirs et les navires coulés de chaque côté ; les flottes ne sont révélées qu'en fin de partie.
+  function ptStop() {
+    var o = PT; if (!o) return;
+    if (o.watch) o.watch.stop();
+    PT = null; $('plateau').hidden = true; $('offbar').hidden = true; $('offbar').textContent = OFF_TXT;
   }
-  function phoneConnect() {
-    if (phNet) phNet.close();
-    phoneStatus('Connexion à l\'iPad…');
-    phNet = Net.joinHost(Ph.hostId, {
-      onStatus: function (s) { if (s === 'retry') phoneStatus('Connexion perdue. Nouvelle tentative…'); else if (s === 'connecting') phoneStatus('Connexion à l\'iPad…'); },
-      onOpen: function () { phNet.send({ t: 'hello', token: Ph.token, name: Ph.name }); },
-      onMessage: phoneOnMessage,
-      onError: function (err) { phoneStatus(err && err.type === 'network' ? 'Pas de connexion au service de mise en relation. Vérifie le Wi-Fi.' : 'Liaison impossible, nouvelle tentative…'); }
+  function ptRender() {
+    if (!G) return;
+    var p;
+    if (!G.online || !G.online.joined) {
+      $('pTitle').textContent = 'Plateau · ' + PT.id; $('pSub').textContent = 'Bataille navale en ligne';
+      $('pCap0').innerHTML = ''; $('pCap1').innerHTML = ''; $('pG0').innerHTML = ''; $('pG1').innerHTML = '';
+      $('pMsg').innerHTML = '<span>En attente des joueurs…</span>';
+      return;
+    }
+    var over = G.phase === 'over', bat = G.phase === 'battle';
+    $('pTitle').textContent = over ? 'Partie terminée' : bat ? 'Bataille en cours' : 'Placement des flottes';
+    $('pSub').textContent = 'Plateau · ' + PT.id + ' · tirs : ' + G.names[0] + ' ' + G.shots[0] + ' · ' + G.names[1] + ' ' + G.shots[1];
+    for (p = 0; p < 2; p++) {
+      $('pCap' + p).innerHTML = '<b>Eaux de ' + esc(G.names[p]) + '</b><span>' + shipsLeft(G.sunk[p]) + ' navires à flot</span>';
+      $('pG' + p).innerHTML = gridHTML({ id: 'pg' + p, inc: G.inc[p], sunk: G.sunk[p], ships: over ? G.fleets[p] : null,
+        last: G.last && G.last.by === 1 - p ? G.last : null });
+      $('pw' + p).classList.toggle('aimed', bat && G.turn === 1 - p);
+    }
+    var t;
+    if (over) t = G.names[G.winner] + ' gagne en ' + G.shots[G.winner] + ' tirs !';
+    else if (bat) t = (G.last ? lastText(null) + ' ' : '') + 'Au tour de ' + G.names[G.turn] + ' de tirer.';
+    else t = G.names.map(function (n, i) { return esc(n) + ' : ' + (G.ready[i] ? 'flotte prête' : 'place sa flotte…'); }).join(' · ');
+    $('pMsg').innerHTML = '<span>' + (over || bat ? esc(t) : t) + '</span>';
+    $('pMsg').className = 'msg' + (bat ? ' alert' : '');
+  }
+  function ptRemote() {
+    var o = PT; if (!o) return;
+    return EL.lire(o.id).then(function (row) {
+      if (PT !== o || !row || row.version <= o.version) return;
+      G = row.etat; o.version = row.version; ptRender();
     });
   }
-  var phStatusText = '';
-  function phoneStatus(t) { phStatusText = t; phoneRender(); }
-  function phoneLog(t) { Ph.log.unshift(t); Ph.log = Ph.log.slice(0, 4); }
-  function phoneOnMessage(m) {
-    if (!m) return;
-    if (m.t === 'full') { Ph.phase = 'full'; phoneRender(); return; }
-    if (m.t === 'newgame') { Ph.ships = []; Ph.inc = E.emptyMatrix(); Ph.sunk = []; Ph.ready = false; Ph.phase = 'place'; Ph.last = null; Ph.log = []; Ph.winner = -1; ui.ship = null; savePhone(); phoneRender(); return; }
-    if (m.t === 'state') {
-      Ph.slot = m.slot; Ph.names = m.names; Ph.turn = m.turn; Ph.winner = m.winner;
-      if (m.phase === 'place') { if (Ph.phase !== 'wait') Ph.phase = Ph.ready ? 'wait' : 'place'; }
-      else Ph.phase = m.phase === 'over' ? 'over' : 'battle';
-      if (m.phase === 'battle' && m.turn === m.slot && (!Ph.lastTurn || Ph.lastTurn !== m.slot)) { try { navigator.vibrate && navigator.vibrate(150); } catch (e) {} }
-      Ph.lastTurn = m.turn;
-      savePhone(); phStatusText = ''; phoneRender(); return;
-    }
-    if (m.t === 'shot') {
-      var res = E.fire(Ph.ships, Ph.inc, Ph.sunk, m.r, m.c);
-      if (!res) return;
-      var adv = Ph.names[1 - Ph.slot];
-      phoneLog(adv + ' a tiré en ' + E.coord(m.r, m.c) + ' : ' + resText({ res: res.res, name: res.ship && res.ship.name }));
-      Ph.last = { r: m.r, c: m.c };
-      try { navigator.vibrate && navigator.vibrate(res.res === 'miss' ? 40 : [120, 60, 120]); } catch (e) {}
-      phNet.send({ t: 'res', seq: m.seq, res: res });
-      savePhone(); phoneRender();
-    }
+  function ptStatus(st) {
+    if (!PT) return;
+    if (st === 'supprimee') { goHome(); olMsg('Cette partie a été supprimée.'); return; }
+    if (st === 'auth') { goHome(); olError({ kind: 'auth' }); return; }
+    $('offbar').textContent = 'Hors ligne : le plateau se remettra à jour au retour du réseau';
+    $('offbar').hidden = st !== 'hors-ligne';
   }
-  function phoneRender() {
-    if (!Ph) return;
-    var ph = Ph.phase;
-    if (ph === 'place') { show('place'); renderPlace(); return; }
-    show('phone');
-    $('phTitle').textContent = Ph.slot >= 0 ? Ph.names[Ph.slot] : 'Bataille navale';
-    $('phSub').textContent = Ph.slot >= 0 ? 'Ta flotte est secrète' : 'Mode téléphone';
-    $('phJoin').hidden = ph !== 'join';
-    var showGrid = ph === 'wait' || ph === 'battle' || ph === 'over';
-    $('phBoards').hidden = !showGrid; $('phFleet').hidden = !showGrid;
-    var line = phStatusText;
-    if (!line) {
-      if (ph === 'full') line = 'Cette partie a déjà deux joueurs.';
-      else if (ph === 'wait') line = 'Flotte prête. En attente de l\'autre joueur…';
-      else if (ph === 'battle') line = Ph.turn === Ph.slot ? 'À toi : tire sur la grille de l\'iPad.' : 'Au tour de ' + Ph.names[Ph.turn] + '…';
-      else if (ph === 'over') line = Ph.winner === Ph.slot ? 'Victoire ! Tu as coulé toute la flotte adverse.' : 'Défaite. Ta flotte est coulée.';
-    }
-    $('phStatus').innerHTML = esc(line); $('phStatus').className = 'msg' + (ph === 'battle' && Ph.turn === Ph.slot && !phStatusText ? ' alert' : '');
-    if (showGrid) {
-      $('phCap').innerHTML = '<b>Ta flotte</b><span>' + shipsLeft(Ph.sunk) + ' navires à flot</span>';
-      $('phGrid').innerHTML = gridHTML({ id: 'ph', inc: Ph.inc, sunk: Ph.sunk, ships: Ph.ships, last: Ph.last });
-      $('phFleet').innerHTML = fleetChips(Ph.sunk);
-    }
-    $('phLog').innerHTML = (Ph.log || []).map(esc).join('<br>');
+  function plateauStart(code) {
+    code = (code || '').trim().toUpperCase();
+    if (code.length !== 4) { olMsg('Le code a 4 lettres.'); return; }
+    olMsg('');
+    EL.lire(code).then(function (row) {
+      if (!row || row.jeu !== 'bataillenavale') { olMsg('Code inconnu.'); return; }
+      onlineStop(); ptStop(); closeOver();
+      G = row.etat; sel = null;
+      var o = PT = { id: code, version: row.version, watch: null };
+      show('plateau');
+      ptRender();
+      o.watch = EL.surveiller(code, function () { return PT ? PT.version : 0; }, ptRemote, ptStatus);
+    }).catch(olError);
   }
 
   /* ================= Événements ================= */
   function bind() {
-    qa('#segMode button').forEach(function (b) { b.onclick = function () { prefs.mode = b.getAttribute('data-m'); savePrefs(); renderHome(); }; });
+    qa('#segMode button').forEach(function (b) { b.onclick = function () { prefs.mode = b.getAttribute('data-m'); savePrefs(); olMsg(''); renderHome(); }; });
     qa('#segLevel button').forEach(function (b) { b.onclick = function () { prefs.level = +b.getAttribute('data-l'); savePrefs(); renderHome(); }; });
     $('swRejoue').onclick = function () { prefs.rejoue = !prefs.rejoue; savePrefs(); renderHome(); };
-    $('n1').oninput = function () { prefs.n1 = this.value; savePrefs(); };
-    $('n2').oninput = function () { prefs.n2 = this.value; savePrefs(); };
-    $('phName').oninput = function () { prefs.pname = this.value; savePrefs(); };
-    $('btnNew').onclick = function () { newGame(); };
+    $('n1').oninput = function () { prefs.n1 = this.value.slice(0, 14); savePrefs(); };
+    $('btnNew').onclick = function () { if (prefs.mode === 'online') onlineCreate(); else newGame(); };
     $('btnResume').onclick = resume;
     $('btnRules').onclick = function () { $('dlgRules').showModal(); };
     $('btnMenuRules').onclick = function () { $('dlgMenu').close(); $('dlgRules').showModal(); };
     qa('[data-close]').forEach(function (b) { b.onclick = function () { b.closest('dialog').close(); }; });
-    ['btnMenuPl', 'btnMenuB', 'btnMenuD', 'btnMenuT', 'btnMenuP'].forEach(function (id) { $(id).onclick = function () { $('dlgMenu').showModal(); }; });
-    $('btnQuit').onclick = function () {
-      $('dlgMenu').close();
-      if (Ph) { if (phNet) phNet.close(); clearPhone(); location.href = baseUrl(); return; }
-      goHome();
-    };
-    $('btnVeil').onclick = dismissVeil;
+    ['btnMenuPl', 'btnMenuB'].forEach(function (id) { $(id).onclick = function () { $('dlgMenu').showModal(); }; });
+    $('btnQuit').onclick = function () { $('dlgMenu').close(); goHome(); };
 
     // placement
-    $('plGrid').onclick = function (ev) { var c = cellOf(ev); if (c) placeTap(c.r, c.c); };
+    $('plGrid').onclick = function (ev) { var c = cellOf(ev); if (c && PL) placeTap(c.r, c.c); };
     $('plFleet').onclick = function (ev) {
-      var b = ev.target.closest('button.shipchip'); if (!b) return;
+      var b = ev.target.closest('button.shipchip'); if (!b || !PL) return;
       var id = b.getAttribute('data-id'), ships = PL.get();
       var s = E.removeShip(ships, id);
       if (s) { ui.horiz = s.cells.length > 1 ? s.cells[0][0] === s.cells[1][0] : ui.horiz; PL.persist(); }
@@ -571,37 +563,46 @@
     $('plClear').onclick = function () { PL.set([]); ui.ship = null; PL.persist(); renderPlace(); };
     $('plOk').onclick = function () { if (E.isComplete(PL.get())) PL.onOk(); };
 
-    // bataille : un joueur
-    $('bTarget').onclick = function (ev) { var c = cellOf(ev); if (c && G) aim(viewer(), 1 - viewer(), c.r, c.c); };
+    // bataille
+    $('bTarget').onclick = function (ev) { var c = cellOf(ev); if (c && G) aim(me(), 1 - me(), c.r, c.c); };
     $('bAction').onclick = function () {
       if (!G) return;
       if (G.phase === 'over') { overOpen = false; showOver(); return; }
-      if (G.await) { G.veil = { kind: 'turn', who: G.turn }; G.await = false; save(); renderAll(); return; }
       fireSelected();
     };
 
-    // bataille : face à face et plateau du mode téléphone
-    $('duo').onclick = function (ev) {
-      var c = cellOf(ev); if (!c || !G) return;
-      var target = c.g === 'd0' ? 0 : c.g === 'd1' ? 1 : -1;
-      if (target >= 0) aim(1 - target, target, c.r, c.c);
+    // en ligne
+    window.addEventListener('offline', function () { if (ONL) onStatus('hors-ligne'); });
+    window.addEventListener('online', function () { if (ONL && ONL.watch) ONL.watch.poke(); });
+    $('btnOlLogin').onclick = function () {
+      olMsg('');
+      EL.login($('olEmail').value.trim(), $('olPwd').value).then(function () { $('olPwd').value = ''; renderHome(); }).catch(function (e) {
+        olMsg(e.kind === 'bad' ? 'E-mail ou mot de passe refusé.' : e.kind === 'reseau' ? 'Pas de réseau.' : 'Erreur : ' + e.message);
+      });
     };
-    [0, 1].forEach(function (p) { $('seat' + p).querySelector('.fire').onclick = function () { if (G && G.turn === p) fireSelected(); }; });
-
-    // téléphone
-    $('phGo').onclick = function () {
-      Ph.name = $('phName').value.trim() || 'Joueur'; prefs.pname = Ph.name; savePrefs();
-      Ph.phase = 'place'; savePhone();
-      phoneConnect(); phoneRender();
+    $('btnOlLogout').onclick = function () { EL.logout(); olMsg(''); renderHome(); };
+    $('btnOlJoin').onclick = function () { onlineJoin($('olCode').value); };
+    $('btnOlPlateau').onclick = function () { plateauStart($('olCode').value); };
+    $('olList').onclick = function (ev) {
+      var b = ev.target.closest('button[data-ol]'); if (!b) return;
+      var id = b.getAttribute('data-id');
+      if (b.getAttribute('data-ol') === 'resume') onlineResume(id);
+      else if (confirm('Supprimer la partie ' + id + ' pour les deux joueurs ?')) EL.supprimer(id).then(olList).catch(olError);
     };
+    $('btnWaitCancel').onclick = function () {
+      var id = ONL && ONL.id;
+      goHome();
+      if (id && confirm('Supprimer la partie ' + id + ' ?')) EL.supprimer(id).catch(function () { /* déjà partie */ });
+    };
+    $('btnWaitHome').onclick = goHome;
+    $('btnFwHome').onclick = goHome;
+    $('btnPlQuit').onclick = goHome;
   }
 
   /* ================= Démarrage ================= */
   function init() {
     loadPrefs(); bind();
-    var m = /[#&]j=([A-Za-z0-9]+)/.exec(location.hash || '');
-    if (m && Net && Net.available()) { phoneInit(m[1]); }
-    else { show('home'); renderHome(); }
+    show('home'); renderHome();
     if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) navigator.serviceWorker.register('sw.js').catch(function () {});
   }
   init();
